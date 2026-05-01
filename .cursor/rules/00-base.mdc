@@ -1,0 +1,33 @@
+---
+description: Core project guardrails for Binalyze Knowledge Bot
+alwaysApply: true
+---
+
+# Binalyze Knowledge Bot — Core Rules
+
+## Project Identity
+- This is an internal knowledge bot for Binalyze (DFIR vendor) People team
+- Stack: n8n (Hostinger VPS) + Postgres (audit log) + Qdrant (vectors) + Claude API + Slack
+- Architecture is LOCKED. Do not propose pivots to GCP, Cloud Run, or other stacks unless explicitly asked.
+
+## Hard Invariants (never violate)
+- The audit_log table is APPEND-ONLY. Never write UPDATE or DELETE queries against it.
+- Every code path that processes a Slack query MUST write an audit row.
+- Slack signature verification uses n8n's built-in feature (n8n >= 1.106.0). Never hand-roll HMAC.
+- Secrets live in env vars or n8n credentials only. Never in code, never in commits.
+- Use n8n-mcp's `get_node_essentials` mode, not `get_node` (token discipline).
+
+## Forbidden patterns
+- Hand-rolled OAuth or signature verification when n8n / SDK provides it (Rule 12: use SDKs)
+- Hardcoded API keys, passwords, tokens anywhere in source files
+- UPDATE or DELETE on audit_log
+- Removing the [ILLUSTRATIVE] tag from stub knowledge base content
+- Adding scope creep features not in the locked architecture
+
+## When unsure
+- Search the project's DECISIONS.md for prior decisions before proposing new ones
+- Ask, don't guess. Half-right code at the audit layer is a compliance incident.
+
+## Verification discipline
+- Every change must include: what changed, why, how to verify it works, what could break.
+- "I think it works" is not verification. Run the command, show the output.

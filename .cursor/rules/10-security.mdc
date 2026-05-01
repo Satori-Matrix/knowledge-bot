@@ -1,0 +1,40 @@
+---
+description: Security and compliance guardrails for sensitive paths
+globs:
+  - "**/*.sql"
+  - "**/*.env*"
+  - "**/.cursor/mcp.json"
+  - "n8n-workflows/**"
+  - "scripts/**"
+  - "infra/**"
+alwaysApply: false
+---
+
+# Security & Compliance Rules
+
+## Secrets handling
+- NEVER write API keys, DB passwords, signing secrets, or tokens into any file
+- ALWAYS use environment variables or n8n credentials
+- If creating example configs, use placeholders like `<YOUR_API_KEY>` not real values
+
+## Audit log invariants (DFIR-grade)
+- audit_log table: 13 fields, append-only via PostgreSQL trigger
+- No code path may bypass the audit write — refusals must also be logged
+- Retention: respect retention_until column, never DROP rows manually
+- Pseudonymisation: store Slack user_id, not email or display_name
+
+## OWASP LLM Top 10 awareness
+- LLM01 Prompt Injection: System prompt is fixed, retrieved chunks are clearly delimited
+- LLM02 Insecure Output: Slack responses are sanitised, no raw HTML or executable
+- LLM03 Training Data: Not applicable (we use Claude API, no fine-tuning)
+- LLM06 Sensitive Info Disclosure: Refusal-on-low-confidence, no system prompt leakage
+- LLM07 System Prompt Leakage: Don't echo the system prompt in any tool output
+
+## Git hygiene
+- `.env`, `.env.*`, `.cursor/mcp.json`, `*.key`, `*.pem` MUST be in .gitignore before any commit
+- If you need to commit something to demo a config, use a `.example` file with placeholders
+
+## Before any destructive action
+- Database migrations: review for breaking changes, write a rollback
+- Schema changes: confirm append-only triggers still apply
+- Removing files: confirm nothing else imports/references them

@@ -141,3 +141,40 @@ dist
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
 .vite/
+
+# === Project-specific additions for Knowledge Bot ===
+
+# Cursor MCP config (may contain credentials in future)
+.cursor/mcp.json
+
+# Secrets and keys (defensive — should never appear, ignored if they do)
+*.key
+*.pem
+*.p12
+*.pfx
+secrets/
+credentials/
+
+# n8n workflow exports (may contain credentials)
+n8n-workflows/*.credentials.json
+*-credentials.json
+*-credential.json
+
+# Database dumps (forensic — never commit)
+*.sql.gz
+*.sql.dump
+*.dump
+postgres-data/
+qdrant-data/
+
+# Local environment overrides (defensive — .env already covered above)
+.env.local
+.env.*.local
+
+# OS / editor noise
+.DS_Store
+Thumbs.db
+
+# Local notes that aren't for the repo
+notes-local.md
+TODO-local.md
