@@ -178,3 +178,7 @@ Thumbs.db
 # Local notes that aren't for the repo
 notes-local.md
 TODO-local.md
+
+# Knowledge base documents (binary; lives in GitHub Release, not repo)
+knowledge-base/
+knowledge-base.zip
