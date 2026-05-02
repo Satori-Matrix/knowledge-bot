@@ -15,7 +15,7 @@ alwaysApply: true
 - Every code path that processes a Slack query MUST write an audit row.
 - Slack signature verification uses n8n's built-in feature (n8n >= 1.106.0). Never hand-roll HMAC.
 - Secrets live in env vars or n8n credentials only. Never in code, never in commits.
-- Use n8n-mcp's `get_node_essentials` mode, not `get_node` (token discipline).
+- Use n8n-mcp's `get_node` with `detail: "standard"` (token discipline); avoid undifferentiated full schema pulls.
 
 ## Forbidden patterns
 - Hand-rolled OAuth or signature verification when n8n / SDK provides it (Rule 12: use SDKs)
@@ -31,3 +31,9 @@ alwaysApply: true
 ## Verification discipline
 - Every change must include: what changed, why, how to verify it works, what could break.
 - "I think it works" is not verification. Run the command, show the output.
+
+## Environment Notes (Cursor remote-SSH)
+- Cursor prepends its bundled `node` on `PATH`; bare `npx` then fails with `ENOENT` on `.../cursor-server/.../linux-x64/lib`.
+- Any MCP launched via `npx` needs `"env": { "PATH": "/usr/bin:/bin" }` on that server entry in `mcp.json` so system Node wins.
+- Smoke check: `env PATH=/usr/bin:/bin /usr/bin/npx -y <package> </dev/null` (expect clean start or graceful stdin EOF, not `linux-x64/lib` ENOENT).
+- Working configs: `context7` in `~/.cursor/mcp.json`; `n8n-mcp` in this repo's `.cursor/mcp.json`.

@@ -351,6 +351,12 @@ MCP servers vary in token cost. Some inject 30,000+ tokens of schemas per Cursor
 - ~5,000 tokens per Cursor turn baseline schema cost
 - Progressive discovery means MCPs are slower for first call but cheaper overall
 
+### Update 2026-05-02
+
+The upstream czlonkowski `n8n-mcp` package consolidated its tool surface: the former `get_node_essentials`, `get_node_info`, and `get_node_documentation` capabilities are now **modes and parameters of a single `get_node` tool** (`detail`: `minimal` | `standard` | `full`, plus other `mode` values per package docs).
+
+ADR-011’s instruction to use **`get_node_essentials`** should be read as **use `get_node` with `detail: "standard"`** against the current package. Token-economics reasoning is unchanged; only the tool name and invocation shape changed.
+
 ---
 
 ## ADR-012: Knowledge Base Content — `[ILLUSTRATIVE]` Tagging
@@ -371,6 +377,57 @@ All knowledge base documents tagged `[ILLUSTRATIVE]` in their frontmatter. The b
 **Accepted:**
 - Demo authenticity is high — no fake claim of real policies
 - Real deployment substitutes real internal documentation; the tagging mechanism remains useful as a "draft / unverified" status indicator
+
+---
+
+## ADR-013: Cursor Rules Files — Plan-vs-Reality and Incremental Authoring
+
+**Date:** 2026-05-02  
+**Status:** Accepted (v1)
+
+### Context
+
+The foundation phase plan described six `.mdc` rule files (`00-base`, `10-security`, `20-architecture`, `30-database`, `40-n8n-workflows`, `50-llm-prompts`). Only `00-base.mdc` and `10-security.mdc` were authored at foundation close; the other four were never created, while `BUILD_LOG.md` implied a fuller tree than existed on disk.
+
+### Decision
+
+Author the remaining `.mdc` files **alongside the phases they govern**, not ahead of the work. Concretely: `30-database.mdc` is created when Phase 3b Postgres schema work is in progress; `40-n8n-workflows.mdc` when Phase 3d workflow build is in progress; and so on. Rules are added when there is concrete behaviour to encode, not as speculative placeholders.
+
+### Consequences
+
+**Accepted:**
+- `BUILD_LOG.md` file trees and “rules present” claims must match the repository at all times — no aspirational rule files in the inventory.
+- Early sessions reference fewer `.mdc` files; that is honest scope, not a gap to paper over.
+
+**Rejected for v1:**
+- Pre-writing empty or generic `.mdc` stubs “for completeness” without governed artefacts.
+
+---
+
+## ADR-014: n8n-mcp Documentation-Only Mode (No N8N_API_KEY in v1)
+
+**Date:** 2026-05-02  
+**Status:** Accepted (v1)
+
+### Context
+
+The czlonkowski `n8n-mcp` package supports at least two modes: **documentation mode** (no n8n API credentials; exposes on the order of seven tools for node lookup, validation, and related read-oriented operations) and **management mode** (with `N8N_API_URL` and `N8N_API_KEY`, exposing additional tools such as workflow create/update against a live n8n instance).
+
+### Decision
+
+**v1 uses documentation-only mode.** The production demo workflow is built in the n8n UI. `n8n-mcp` exists in Cursor to supply accurate node schema and validation during design and prompting — not to mutate live workflows from the agent.
+
+### Reasoning
+
+Least privilege: granting management credentials to an MCP reachable from Cursor would allow an agent session to alter real production workflows during a build — an unnecessarily broad attack surface for a forensic-grade demo whose audit story is anchored elsewhere.
+
+### Consequences
+
+**Accepted:**
+- The Cursor agent cannot create or modify the live n8n workflow via `n8n-mcp`; operators build and export workflows manually in n8n.
+
+**Deferred:**
+- v2 may enable management mode for ops automation only behind explicit opt-in, change control, and separate credential scope.
 
 ---
 

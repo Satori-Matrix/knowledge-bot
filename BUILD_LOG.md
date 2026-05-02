@@ -8,13 +8,27 @@ For architectural decisions, see `DECISIONS.md`. For compliance, see `docs/COMPL
 
 ## Current Status
 
-**Phase:** Foundation 100% complete. Phase 3 (infrastructure stack) not yet started.
+**Phase:** Foundation complete. MCP configuration recovered and verified 2026-05-02. **Phase 3a** (Docker compose for Postgres + Qdrant + NocoDB + Grafana) is next.
 
-**Last update:** 2026-05-01 (foundation phase end)
+**Last update:** 2026-05-02 (state recovery + MCP verification)
 
 **Demo target:** Wednesday 2026-05-06, 15:30 UK
 
 **Time budget remaining:** ~3-4 hours of focused build before rehearsal
+
+---
+
+## State Recovery (2026-05-02)
+
+`BUILD_LOG.md` previously claimed `n8n-mcp` and Context7 were present in MCP config; inspection showed neither was in the effective `mcp.json` files at that time (config drift versus narrative).
+
+Global `~/.cursor/mcp.json` on the build host had accumulated unrelated MCP entries and **plaintext credentials** (see `docs/SECURITY_INCIDENTS.md` — forensic log only; credentials are not duplicated here).
+
+Cursor remote-SSH workspaces prepend Cursor’s bundled Node on `PATH`, which breaks MCP servers invoked with bare `npx` unless `PATH` is constrained for those processes. Verified fix: `"env": { "PATH": "/usr/bin:/bin" }` on the `npx`-based entries, with `/usr/bin/npx` as command (see `.cursor/rules/00-base.mdc`).
+
+The czlonkowski `n8n-mcp` package consolidated tools: older `get_node_essentials` is now `get_node` with `detail: "standard"` (see ADR-011 addendum and ADR-013/014 in `DECISIONS.md`).
+
+**Verified MCP set (2026-05-02):** `filesystem`, `sequential-thinking`, and `context7` (global); `n8n-mcp` (project scope). All four green in Cursor after the above corrections.
 
 ---
 
@@ -86,16 +100,22 @@ Audited 2026-05-01 on Hostinger VPS `srv1178070.hstgr.cloud` (72.61.207.148).
 
 ---
 
-## MCP Servers Configured (Not Yet Tested)
+## MCP Servers Configured (verified 2026-05-02)
 
-- **n8n-mcp** (czlonkowski) — project-level config at `.cursor/mcp.json`
-- **Context7** (Upstash) — global config at `~/.cursor/mcp.json`
+| Server | Scope | Tools (approx.) | Notes |
+|--------|--------|-----------------|--------|
+| **filesystem** | Global (`~/.cursor/mcp.json`) | 14 | Working |
+| **sequential-thinking** | Global | 1 | Working |
+| **context7** | Global | 2 | Working — `/usr/bin/npx` + `env.PATH` `/usr/bin:/bin` |
+| **n8n-mcp** (czlonkowski) | Project (`.cursor/mcp.json`) | 7 tools + 2 resources | Documentation-only mode; working — `/usr/bin/npx` + same `PATH` override |
 
-**Status:** Configured but not yet verified loading correctly. Sanity test pending at start of next session.
+**Removed from global config during recovery:** `github`, `postgres-chainlit`, `postgres-rag`, `memory` (and associated plaintext material — see `docs/SECURITY_INCIDENTS.md`).
 
-**Skipped (token economics):**
+**Still skipped by design (token economics / phase):**
 - GitHub MCP — replaced by `gh` CLI in terminal
-- Postgres MCP — to be added AFTER Postgres deploys (next session)
+- Postgres MCP — to be added after Postgres for the bot deploys (Phase 3+), read-only mode when introduced
+
+**MCP sanity test:** ✅ Complete (2026-05-02), including config drift recovery and live Cursor checks for all four servers above.
 
 ---
 
@@ -112,12 +132,13 @@ KNOWLEDGE-BOT/
 ├── docs/
 │   ├── COMPLIANCE.md            (GDPR posture, retention, hold)
 │   ├── SECURITY.md              (threat model, OWASP LLM Top 10)
+│   ├── SECURITY_INCIDENTS.md    (forensic security log — dated entries)
 │   ├── PRODUCTION_CHECKLIST.md  (full enterprise validation path)
 │   ├── REVIEW_GUIDE.md          (3 reviewer paths, prepared Q&A)
 │   └── AUTOMATED_VALIDATION.md  (realistic SMB validation stack)
 ├── .gitignore                   (extended with security patterns)
 ├── BUILD_LOG.md                 (this file)
-├── DECISIONS.md                 (12 ADRs, architectural record)
+├── DECISIONS.md                 (14 ADRs, architectural record)
 ├── LICENSE                      (MIT, untouched)
 └── README.md                    (forensic-grade demo positioning)
 ```
@@ -166,8 +187,8 @@ scripts/
 |-------|--------|----------------|
 | Audit | ✅ Complete | (was 25 min) |
 | Foundation (rules, decisions, docs) | ✅ Complete | (was ~3 hours) |
-| MCP sanity test | ⏳ Next session | 5 min |
-| Phase 3a: Docker compose for Postgres + Qdrant + NocoDB + Grafana | ⏳ Phase 3 | 45 min |
+| MCP sanity test | ✅ Complete (2026-05-02; incl. config drift + PATH fix) | 5 min |
+| Phase 3a: Docker compose for Postgres + Qdrant + NocoDB + Grafana | ⏳ Next | 45 min |
 | Phase 3b: Postgres init SQL with triggers + retention + hold tables | ⏳ Phase 3 | 45 min |
 | Phase 3c: Knowledge base content + ingestion script | ⏳ Phase 3 | 45 min |
 | Phase 3d: n8n workflow (Slack → block-list → retrieval → Claude → audit → response) | ⏳ Phase 3 | 75 min |
@@ -182,11 +203,11 @@ scripts/
 
 ## Next 3-5 Concrete Steps
 
-1. **MCP sanity test** — open Cursor, verify n8n-mcp + Context7 are loaded and responding
-2. **Write Phase 3a Docker compose** — Postgres + Qdrant + NocoDB + Grafana joining `app-net`
-3. **Stand up containers** — verify all four start cleanly, network reachability between them
-4. **Write Postgres init SQL** — 13-field audit_log schema, append-only triggers, retention column, legal_hold tables, hold_audit table
-5. **Verify schema** — run check-audit command against empty schema; confirm structure
+1. **Write Phase 3a Docker compose** — Postgres + Qdrant + NocoDB + Grafana joining `app-net`
+2. **Stand up containers** — verify all four start cleanly, network reachability between them
+3. **Write Postgres init SQL** — 13-field audit_log schema, append-only triggers, retention column, legal_hold tables, hold_audit table
+4. **Verify schema** — run check-audit command against empty schema; confirm structure
+5. **Re-open MCP panel after host changes** — if global MCP config changes, confirm four servers still green (operational hygiene)
 
 ---
 
@@ -194,7 +215,7 @@ scripts/
 
 | Question | Owner | Resolution path |
 |----------|-------|-----------------|
-| Does n8n-mcp's npx-based stdio mode actually load in Cursor? | Verify next session | 5-min test: open Cursor, run a Cursor chat asking "what n8n nodes are available for slack triggers" — if it answers from MCP, working |
+| Does n8n-mcp load in Cursor on remote-SSH? | Resolved 2026-05-02 | Requires `PATH` override in `mcp.json` for `npx`; documented in `00-base.mdc` and state recovery section above |
 | Will n8n version on VPS support n8n-mcp's create_workflow tool? | Optional verify | Not blocking; we build workflow in n8n UI directly anyway |
 | Anthropic API key — do we have one, where is it stored? | User to confirm | Bitwarden vault entry needed before Phase 3d |
 | Claude model choice for the bot — Sonnet 4 or Opus 4? | User decision | Sonnet 4 is the right default; Opus only if benchmarking shows need |
@@ -205,7 +226,7 @@ scripts/
 
 If resuming this project in a new conversation, paste this paragraph at the top:
 
-> "Resuming work on the Forensic-Grade Knowledge Bot for People Operations (interview demo for DFIR vendor, Wed 2026-05-06 15:30 UK). Architecture LOCKED — see DECISIONS.md. Stack: n8n on Hostinger VPS + Postgres (audit log, append-only triggers) + Qdrant (vectors) + NocoDB (reviewer UI) + Grafana (ops dashboard) + Slack + Claude API. Foundation phase complete (rules, decisions, compliance docs all in repo: github.com/Satori-Matrix/knowledge-bot). Currently at start of Phase 3: need to deploy infrastructure containers, write Postgres schema, build n8n workflow. Read BUILD_LOG.md for current state and next steps. Apply Bulletproof Prompt rules from prior session."
+> "Resuming work on the Forensic-Grade Knowledge Bot for People Operations (interview demo for DFIR vendor, Wed 2026-05-06 15:30 UK). Architecture LOCKED — see DECISIONS.md. Stack: n8n on Hostinger VPS + Postgres (audit log, append-only triggers) + Qdrant (vectors) + NocoDB (reviewer UI) + Grafana (ops dashboard) + Slack + Claude API. Foundation + MCP verification complete as of 2026-05-02 (four MCPs green: filesystem, sequential-thinking, context7 global; n8n-mcp project-scoped, documentation-only). Next: Phase 3a Docker compose. Read BUILD_LOG.md and docs/SECURITY_INCIDENTS.md if touching Cursor MCP or credentials. Apply Bulletproof Prompt rules from prior session."
 
 Then point me at the repo + BUILD_LOG.md and we re-anchor in 2 minutes.
 
