@@ -1,54 +1,59 @@
 # Forensic-Grade Knowledge Bot for People Operations
 
-A Slack-deployed knowledge bot for People-team policy questions, built with a focus on **forensic-grade audit trail** and **compliance-by-design**. Demo project for an AI Automation Engineer interview at a DFIR vendor.
+A Slack-deployed knowledge bot for People-team policy questions, built for **forensic-grade audit trail** and **compliance-by-design**. Demo project for an AI Automation Engineer interview at a DFIR vendor.
 
 ## What it does
 
-A user runs `/ask <question>` in Slack. The bot:
+A user invokes the bot from Slack. The service:
 
-1. Verifies the request signature (Slack signing secret, native n8n verification)
-2. Retrieves relevant chunks from a controlled knowledge base
-3. Generates a grounded answer with Claude Sonnet, citing sources
+1. Verifies the request signature (**Slack Bolt SDK** on **Cloud Run** — no hand-rolled HMAC)
+2. Retrieves relevant evidence via **Vertex AI RAG Engine** (layout-aware parsing, including diagrams where configured)
+3. Generates a grounded answer with **Gemini 3 via Vertex AI** (or an alternate model such as Claude through **Vertex AI Model Garden** where policy allows), citing sources
 4. Refuses politely when retrieval confidence is low (no hallucinated answers on policy questions)
-5. Writes a 13-field immutable audit row covering chain of custody for every interaction
+5. Writes a **13-field immutable audit row** to **Cloud SQL (Postgres)** with **append-only triggers** — our schema, our chain of custody
 
-## Architecture (v1, this demo)
+## Architecture (GCP-native, this build)
 
-- **n8n** (self-hosted, Hostinger VPS) — workflow orchestration
-- **Postgres** — append-only audit log with PostgreSQL trigger enforcement
-- **Qdrant** — vector store for hybrid retrieval
-- **Claude API** (Anthropic) — generation with structured grounded prompts
-- **Slack** — ingress (slash command) and egress (response with citations)
-- **Grafana** — operational dashboard for queries, refusals, retrieval metrics
-- **Traefik** — reverse proxy with automatic Let's Encrypt TLS
+- **Cloud Run** — Orchestration: Slack ingress, retrieval/generation coordination, optional custom reviewer surfaces
+- **Vertex AI RAG Engine** — Commodity layers: ingestion, parsing, embedding, retrieval, reranking
+- **Cloud SQL (Postgres)** — **Differentiated:** append-only `audit_log`, retention, litigation hold tables — same design intent as `DECISIONS.md` ADR-005 onward
+- **Cloud Storage** — Document upload destination for the corpus
+- **Slack** — Ingress and egress
+- **Looker Studio + BigQuery** — Operations dashboard and audit-oriented views
+- **Cloud Audit Logs + IAM** — Platform-level independent witness alongside application audit rows
+
+**v0 (Hostinger):** A Docker stack under `infra/` (n8n-era prototyping) **remains deployed as fallback**; it is **not** the primary demo path after **ADR-016**. See `DECISIONS.md`.
 
 ## Why this shape
 
-The audit log isn't a feature — it's the point. Internal AI tools that answer compliance questions without an audit trail are a reputational liability for any security-focused company. This bot can answer the forensic question: "who asked what, when, what was returned, what sources were cited, was the answer refused, why?"
+**Forensic differentiation is ours:** audit schema, refusal semantics, hold management, and pseudonymisation policy. **Commodity ML/RAG is Google's:** parsing, embeddings, retrieval, and reranking at production quality — including stronger handling of technical layouts than a bolted-on self-hosted vector store.
 
-See [`DECISIONS.md`](./DECISIONS.md) for architectural reasoning, build-vs-buy analysis, and rejected alternatives.
+The demo is positioned as **the architecture Binalyze would actually extend at scale**, not a throwaway self-hosted prototype with a separate “v2 migration” fantasy.
+
+See [`DECISIONS.md`](./DECISIONS.md) for **ADR-016** (GCP pivot), prior ADRs (superseded entries retained), and trade-offs.
 
 ## Documentation
 
-- [`DECISIONS.md`](./DECISIONS.md) — architectural decisions and trade-offs
+- [`DECISIONS.md`](./DECISIONS.md) — architectural decisions and forensic record (incl. ADR-016)
 - [`docs/COMPLIANCE.md`](./docs/COMPLIANCE.md) — GDPR posture, retention, RBAC design, litigation hold
 - [`docs/SECURITY.md`](./docs/SECURITY.md) — threat model, OWASP LLM Top 10 mapping
-- [`docs/PRODUCTION_CHECKLIST.md`](./docs/PRODUCTION_CHECKLIST.md) — what changes from demo to production deployment
-- [`docs/REVIEW_GUIDE.md`](./docs/REVIEW_GUIDE.md) — for an independent reviewer: 30-min, 2-hour, and full review paths
+- [`docs/PRODUCTION_CHECKLIST.md`](./docs/PRODUCTION_CHECKLIST.md) — v1 production deployment checklist on GCP
+- [`docs/REVIEW_GUIDE.md`](./docs/REVIEW_GUIDE.md) — independent reviewer paths
 
 ## Demo positioning
 
-This repository is shipped as an interview deliverable. The knowledge base content tagged `[ILLUSTRATIVE]` is illustrative only — it does not represent any specific organisation's actual policies. Real deployment would substitute real internal documentation.
+This repository is shipped as an interview deliverable. Knowledge base content tagged `[ILLUSTRATIVE]` is synthetic — it does not represent any specific organisation's real policies.
 
 ## Status
 
-- Foundation: complete
-- Workflow build: in progress
-- Production-ready: no. Production deployment requires the items in `PRODUCTION_CHECKLIST.md`.
+- Foundation + documentation: complete  
+- **ADR-016:** GCP is the primary build path  
+- **v0 Hostinger stack:** running as optional fallback (`infra/`)  
+- Production-ready: no — follow `PRODUCTION_CHECKLIST.md`
 
 ## Security note
 
-**Do not commit secrets.** The `.gitignore` blocks common secret patterns (`.env`, `*.key`, `*.pem`, `.cursor/mcp.json`, n8n credential exports). If you fork this repo, audit `.gitignore` before your first commit.
+**Do not commit secrets.** The `.gitignore` blocks common secret patterns (`.env`, `*.key`, `*.pem`, `.cursor/mcp.json`, credential exports). GCP: use **Secret Manager** and **Workload Identity** — never keys in repo.
 
 ## License
 

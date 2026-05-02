@@ -2,7 +2,7 @@
 
 This document is for an independent reviewer assessing the Forensic-Grade Knowledge Bot for People Operations. Three review paths are provided depending on time available.
 
-The bot is a v1 interview demo. Limitations are documented (see `docs/PRODUCTION_CHECKLIST.md`); production gates are explicit.
+The bot is an interview demo evolving toward **GCP production** (see **ADR-016**). Limitations are documented (see `docs/PRODUCTION_CHECKLIST.md`); production gates are explicit.
 
 ---
 
@@ -14,7 +14,7 @@ For a reviewer with limited time. Five questions, five files.
 **Read:** `README.md` (top of file, 30 seconds)
 
 ### Q2: What architectural decisions were made and why?
-**Read:** `DECISIONS.md`, sections ADR-001 (architecture), ADR-005 (audit log), ADR-008 (reviewer interface), ADR-009 (litigation hold). Skim others. (~10 minutes)
+**Read:** `DECISIONS.md`, sections **ADR-016** (GCP pivot), **ADR-005** (audit log), **ADR-009** (litigation hold). Skim superseded Hostinger ADRs (001–004, 008) for historical context. (~10 minutes)
 
 ### Q3: What are the security controls?
 **Read:** `docs/SECURITY.md`, sections 2 (threat model), 3 (OWASP mapping), 5 (prompt injection defense). (~5 minutes)
@@ -39,34 +39,34 @@ Adds technical inspection on top of Path 1.
 ### After completing Path 1, additionally:
 
 #### A. Inspect the audit log schema
-- Look at the Postgres init SQL (in `infra/postgres/init.sql` or equivalent path)
+- Look at the Postgres init SQL (in `infra/postgres/init.sql` when added for **Cloud SQL**, or equivalent migration artefact)
 - Verify: 13 fields present, append-only triggers exist, retention column present, legal_hold columns present
 - Verify: triggers are `BEFORE UPDATE` and `BEFORE DELETE` raising exception
-- Confirm: even table owner cannot bypass without explicit trigger disable
+- Confirm: even table owner cannot bypass without explicit trigger disable (logged)
 
 #### B. Trace one request end-to-end
-- Read the n8n workflow JSON (in `n8n-workflows/knowledge-bot.json`)
-- Confirm: Slack signature verification node is the first node
-- Confirm: legal_hold_subjects lookup happens before audit log write
+- Read the **Cloud Run** handler code (repo path TBD when Phase 3d-G lands) or design doc
+- Confirm: **Slack Bolt** signature verification is the first gate
+- Confirm: `legal_hold_subjects` lookup happens before audit log write
 - Confirm: RBAC block-list check happens before retrieval
 - Confirm: every path (success, refusal, RBAC block) writes an audit row
 
 #### C. Inspect the system prompt
-- Read the prompt construction (in workflow JSON or `prompts/system.md`)
+- Read the prompt construction (in service code or `prompts/system.md`)
 - Confirm: system prompt is fixed, not constructed from user input
 - Confirm: retrieved chunks delimited (look for `<retrieved_context>` markers or equivalent)
 - Confirm: refusal instruction explicit ("if confidence < threshold, refuse with stated reason")
 
 #### D. Run a query end-to-end (in a test environment)
-- Run `/check-audit` command (see `.cursor/commands/check-audit.md`)
+- Run `/check-audit` command (see `.cursor/commands/check-audit.md`) once **Cloud SQL** is provisioned
 - Issue a Slack `/ask` query for a test case
-- Watch the audit_log row appear
+- Watch the `audit_log` row appear (BigQuery mirror or direct SQL)
 - Issue a query designed to fail (e.g. nonsense input) — confirm refusal + audit row
 
 #### E. Verify exposure
-- Run `nmap` against the public IP — should show only 80, 443, 22 (SSH key-only)
-- Hit the n8n public subdomain — should be authentication-gated
-- Hit NocoDB — should require login
+- Review **Cloud Run** ingress settings and **IAM** (`roles/run.invoker` etc.)
+- Confirm **Slack** signing secret is not in repo
+- Confirm **Looker / BigQuery** datasets use least-privilege IAM, not public anonymous access
 
 **At the end of two hours, the reviewer can answer:**
 - Does the implementation match the design?
@@ -82,10 +82,10 @@ Full review takes 1-2 days and is appropriate before production deployment, not 
 ### A. All of Path 2, plus:
 
 ### B. Code review
-- Read every n8n Code node (JavaScript executed inline in the workflow)
+- Read all Cloud Run service code (Python/Node as chosen)
 - Read all SQL: schema, triggers, retention script, hold-management procedures
 - Read the `.cursor/rules/` files to understand the development discipline
-- Read the knowledge base ingestion script(s)
+- Read the knowledge base ingestion / RAG wiring (Vertex AI)
 
 ### C. Threat model deep dive
 - Walk through each threat (T1-T10 in `docs/SECURITY.md`) with a "if I were the attacker" mindset
@@ -108,7 +108,7 @@ Full review takes 1-2 days and is appropriate before production deployment, not 
 ### F. Operational review
 - Review the runbook (in production: `docs/RUNBOOK.md`)
 - Walk through incident response procedures
-- Test the deployment and rollback paths
+- Test the deployment and rollback paths (**Cloud Run** revisions; **Cloud SQL** PITR)
 - Verify backups are taken and restorable
 
 **At the end of a full review, the reviewer produces a written report covering:**
@@ -130,7 +130,7 @@ These are questions a reviewer is likely to ask, with pointers to the answer. Us
 See `docs/SECURITY.md` section 5 (prompt injection defense). Output filter detects common extraction patterns; refusal-on-low-retrieval-confidence denies the vector of crafting queries that retrieve attacker-controlled data.
 
 ### "What if the audit log gets too big?"
-See `docs/COMPLIANCE.md` section 3 (retention policy). Default 90 days for queries, 7 years for refusals, indefinite for held data. Routine deletion script runs nightly. Held data may grow indefinitely under prolonged investigations — by design.
+See `docs/COMPLIANCE.md` section 3 (retention policy). Default 90 days for queries, 7 years for refusals, indefinite for held data. Routine deletion job runs on schedule. Held data may grow indefinitely under prolonged investigations — by design.
 
 ### "How do you handle a GDPR right-to-erasure request from someone under legal hold?"
 See `docs/COMPLIANCE.md` section 2 (data subject rights — erasure detailed). Article 17(3)(e) exemption invoked; subject is informed in writing that their request is noted but pending until hold release.
@@ -139,28 +139,28 @@ See `docs/COMPLIANCE.md` section 2 (data subject rights — erasure detailed). A
 See `DECISIONS.md` ADR-005 (audit log). Every response is logged with retrieval metadata; users can flag responses; refusals on low confidence prevent the most common hallucination class (no retrieval matched).
 
 ### "What stops a developer from secretly modifying an audit row?"
-See `DECISIONS.md` ADR-005 (audit log triggers) and `docs/SECURITY.md` section 2 (T5). Append-only PostgreSQL triggers block UPDATE and DELETE at the database level. Disabling the triggers requires DBA-level access, which is itself logged. The audit log of the audit log.
+See `DECISIONS.md` ADR-005 (audit log triggers) and `docs/SECURITY.md` section 2 (T5). Append-only PostgreSQL triggers block UPDATE and DELETE at the database layer. Disabling the triggers requires elevated access, which **Cloud Audit Logs** records administratively.
 
 ### "How does this scale to 10x the demo's traffic?"
-See `docs/PRODUCTION_CHECKLIST.md` section 7 (performance and scale). Specific gates and corresponding actions documented. n8n Queue Mode, Postgres read replica, Qdrant horizontal scaling — pre-optimise nothing, measure first.
+See `docs/PRODUCTION_CHECKLIST.md` section 7 (performance and scale). Cloud Run concurrency, Cloud SQL tiering, Vertex quotas — pre-optimise nothing, measure first.
 
 ### "What's your incident response plan?"
-See `docs/SECURITY.md` section 9 (incident response). v1 sketch covers contain → preserve → investigate → notify → remediate → communicate. Production deployment requires a fuller plan with named responders.
+See `docs/SECURITY.md` section 9 (incident response). Outline covers contain → preserve → investigate → notify → remediate → communicate. Production deployment requires a fuller plan with named responders.
 
 ### "Has this been independently security-reviewed?"
-**v1: No external review. Self-reviewed against OWASP LLM Top 10 (see `docs/SECURITY.md` section 3) plus automated AI-powered code review (see `docs/AUTOMATED_VALIDATION.md`).** External review path with named vendors and budget is in `docs/PRODUCTION_CHECKLIST.md` section 6, appropriate for compliance attestations or customer-facing rollout.
+**Demo: No external review.** Self-reviewed against OWASP LLM Top 10 (see `docs/SECURITY.md` section 3) plus automated validation path (see `docs/AUTOMATED_VALIDATION.md`). External review path with named vendors and budget is in `docs/PRODUCTION_CHECKLIST.md` section 6, appropriate for compliance attestations or customer-facing rollout.
 
-### "What happens if Anthropic has an outage?"
-v1: bot returns an error to Slack; the error itself is audited. v2 (production): consider a fallback path (cached frequent answers, secondary LLM provider) — documented in `DECISIONS.md` "Decisions Not Yet Made."
+### "What happens if Vertex AI or the chosen model has an outage?"
+The bot returns a controlled error to Slack; the error path is audited. Consider multi-region Run and fallback models only after measured need — document in `DECISIONS.md` "Decisions Not Yet Made" as operational maturity grows.
 
 ### "What's the worst-case scenario you've thought about?"
 Top three (from `docs/SECURITY.md`):
-1. Audit log integrity compromise (T5) — mitigated by DB-level triggers; production adds hash chaining
+1. Audit log integrity compromise (T5) — mitigated by DB-level triggers; Cloud Audit Logs add platform witness
 2. Sensitive info leakage via LLM (T3) — mitigated by output filter and refusal threshold
-3. Slack request forgery (T1) — mitigated by signature verification; standard.
+3. Slack request forgery (T1) — mitigated by Bolt signature verification; standard
 
 ### "Show me how to run an investigation if Compliance asks for all queries from User X between dates Y and Z."
-See `docs/COMPLIANCE.md` section 4 (litigation hold procedure). Reviewer filters NocoDB by `slack_user_id` and date range, exports CSV, optionally toggles `legal_hold` on selected rows. v2 wrapper adds cryptographic hash and manifest.
+See `docs/COMPLIANCE.md` section 4 (litigation hold procedure). Analyst runs a **BigQuery** SQL query (or Looker exploration) filtered by `slack_user_id` and date range, exports results, optionally sets `legal_hold` via controlled workflow. v2 wrapper adds cryptographic hash and manifest.
 
 ---
 

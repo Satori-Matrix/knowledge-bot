@@ -7,22 +7,24 @@ alwaysApply: true
 
 ## Project Identity
 - This is an internal knowledge bot for Binalyze (DFIR vendor) People team
-- Stack: n8n (Hostinger VPS) + Postgres (audit log) + Qdrant (vectors) + Claude API + Slack
-- Architecture is LOCKED. Do not propose pivots to GCP, Cloud Run, or other stacks unless explicitly asked.
+- **Primary stack (post ADR-016):** GCP — **Cloud Run** + **Vertex AI RAG Engine** + **Cloud SQL (Postgres, audit log)** + **Cloud Storage** + **Slack** + **Looker Studio / BigQuery** for ops and reviewer views. **Gemini 3 via Vertex** default; Claude via **Model Garden** optional.
+- **v0 fallback:** Hostinger Docker stack under `infra/` (n8n-era prototyping) — **superseded as the demo path**; containers may remain running; see **ADR-016** in `DECISIONS.md`.
+- Architecture is LOCKED to **ADR-016** for the primary path. Do not propose reverting to Hostinger as the main deployment without an explicit ADR.
 
 ## Hard Invariants (never violate)
 - The audit_log table is APPEND-ONLY. Never write UPDATE or DELETE queries against it.
 - Every code path that processes a Slack query MUST write an audit row.
-- Slack signature verification uses n8n's built-in feature (n8n >= 1.106.0). Never hand-roll HMAC.
-- Secrets live in env vars or n8n credentials only. Never in code, never in commits.
-- Use n8n-mcp's `get_node` with `detail: "standard"` (token discipline); avoid undifferentiated full schema pulls.
+- Slack signature verification uses the **Slack Bolt SDK** on **Cloud Run** (or another maintained SDK Google/Slack documents). Never hand-roll HMAC.
+- Secrets live in **GCP Secret Manager** + **Workload Identity** (or equivalent). Never in code, never in commits. v0 `.env` on Hostinger is legacy prototyping only.
+- Use n8n-mcp's `get_node` with `detail: "standard"` (token discipline); avoid undifferentiated full schema pulls. *(Tooling for workflow docs; primary orchestration is Cloud Run.)*
 
 ## Forbidden patterns
-- Hand-rolled OAuth or signature verification when n8n / SDK provides it (Rule 12: use SDKs)
+- Hand-rolled OAuth or signature verification when an SDK provides it (Rule 12: use SDKs)
 - Hardcoded API keys, passwords, tokens anywhere in source files
 - UPDATE or DELETE on audit_log
 - Removing the [ILLUSTRATIVE] tag from stub knowledge base content
 - Adding scope creep features not in the locked architecture
+- **Custom HTTP glue** between two vendors’ products when neither offers a first-class integration (Rule 13)
 
 ## When unsure
 - Search the project's DECISIONS.md for prior decisions before proposing new ones
@@ -37,3 +39,9 @@ alwaysApply: true
 - Any MCP launched via `npx` needs `"env": { "PATH": "/usr/bin:/bin" }` on that server entry in `mcp.json` so system Node wins.
 - Smoke check: `env PATH=/usr/bin:/bin /usr/bin/npx -y <package> </dev/null` (expect clean start or graceful stdin EOF, not `linux-x64/lib` ENOENT).
 - Working configs: `context7` in `~/.cursor/mcp.json`; `n8n-mcp` in this repo's `.cursor/mcp.json`.
+
+## Rule 13 — Adopt for commodity, build for differentiation
+
+- **Build for the system you'll have in two years, not just the demo.** If the original ADRs described a **“v2 migration”** to be “real,” that was a sign the **v1 Hostinger stack was the wrong long-term anchor** — corrected by **ADR-016**.
+- **When using a vendor for part of a system, use the vendor's native integration** with your orchestration layer. Do not build **custom HTTP glue** between two vendors' products that lack a first-class integration (e.g. n8n generic nodes calling Vertex RAG Engine REST without native support).
+- **Adopt production-grade components for commodity parts:** parsing, embedding, retrieval, reranking → **Vertex AI RAG Engine**. **Keep custom only what is defensibly differentiated:** audit logs, refusal logic, hold management, and pseudonymisation policy.

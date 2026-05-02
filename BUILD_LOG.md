@@ -8,13 +8,23 @@ For architectural decisions, see `DECISIONS.md`. For compliance, see `docs/COMPL
 
 ## Current Status
 
-**Phase:** Foundation + MCP verification complete 2026-05-02. **Phase 3a** (Docker compose for Postgres + Qdrant + NocoDB + Grafana on `app-net`, Traefik TLS) is **complete and verified on VPS**. **Phase 3b** (Postgres init SQL: `audit_log` schema, append-only triggers, retention / hold tables) is next.
+**Phase:** Foundation + MCP verification complete 2026-05-02. **Architecture pivot (ADR-016, 2026-05-02):** primary build path is **GCP** (Cloud Run + Vertex AI RAG Engine + Cloud SQL + Cloud Storage + Looker/BigQuery). **Phase 3a** (Hostinger `infra/` stack) is **complete and retained as v0 fallback** on the VPS — superseded as the demo/production target by ADR-016. **Next:** **Phase 3a-G** (GCP project setup).
 
-**Last update:** 2026-05-02 (Phase 3a infra committed; containers verified)
+**Last update:** 2026-05-02 (architectural pivot to GCP; ADR-016)
 
 **Demo target:** Wednesday 2026-05-06, 15:30 UK
 
-**Time budget remaining:** ~3-4 hours of focused build before rehearsal
+**Time budget remaining:** ~6–7 hours of focused build on the GCP path before rehearsal (see Phase Plan)
+
+---
+
+## Architecture Re-platform (2026-05-02)
+
+The project **pivoted mid-build** from a **self-hosted Hostinger** stack (n8n + Postgres + Qdrant + NocoDB + Grafana) to a **production-grade GCP** architecture. Full reasoning, alternatives, and Rule 13 are in **`DECISIONS.md` ADR-016**. ADR-001 through ADR-004 and ADR-008 are **superseded** (text retained as forensic record); ADR-005–007, ADR-009–014 remain valid.
+
+**Operational meaning:** **Phase 3a** (`infra/docker-compose.yml` on Hostinger) stays **up** as **v0 prototyping / fallback**. **Phase 3b onward** on the primary roadmap executes against **GCP** (phases **3a-G … 3f-G** in the table below).
+
+**Preserved:** Audit log schema intent (append-only, 13 fields, retention, hold tables), GDPR posture, litigation-hold logic, documentation discipline, MCP/tooling work — all carry forward to **Cloud SQL** and Cloud Run.
 
 ---
 
@@ -58,28 +68,25 @@ Audited 2026-05-01 on Hostinger VPS `srv1178070.hstgr.cloud` (72.61.207.148).
 - ~29 GB RAM headroom available
 - ~330 GB disk headroom available
 - Free ports: 5432, 5433, 6333, 6334, plus any unprivileged
-- Will join existing `app-net` network for internal addressing
+- v0 bot containers join existing `app-net` (see `infra/`); primary path is GCP per ADR-016
 
 ---
 
 ## Architecture (Locked, See DECISIONS.md for ADRs)
 
-**v1 (this build):**
-- n8n (existing) for workflow orchestration
-- Postgres (new container `postgres_binalyze`) for audit log with append-only triggers
-- Qdrant (new container `qdrant_binalyze`) for vector retrieval
-- NocoDB (new container `nocodb_binalyze`) for reviewer interface
-- Grafana (new container `grafana_binalyze`) for operations dashboard
-- Slack as ingress + egress
-- Claude API for generation
+**Primary path (post ADR-016, this build):**
+- **Cloud Run** — Slack webhook, orchestration, optional reviewer UI surfaces
+- **Vertex AI RAG Engine** — Ingestion, layout-aware parsing (incl. diagrams), embedding, retrieval, reranking (commodity layers)
+- **Cloud SQL (Postgres)** — `audit_log` and related tables with append-only triggers (same design intent as ADR-005)
+- **Cloud Storage** — Document uploads feeding the corpus
+- **Slack** — Ingress/egress; **Slack Bolt SDK** signature verification on Cloud Run
+- **Looker Studio + BigQuery** — Ops dashboard (replaces Grafana)
+- **Looker / BigQuery and/or Cloud Run UI** — Reviewer / case-work (replaces NocoDB as primary)
+- **Gemini 3 via Vertex AI** for generation; **Claude** optional via Vertex **Model Garden**
 
-**Architectural option chosen:** Option B — adopt existing n8n + Traefik, dedicated Postgres + Qdrant + NocoDB + Grafana for the bot.
+**v0 (Hostinger, fallback only — superseded as target by ADR-016):** n8n + Traefik + `postgres_binalyze` + `qdrant_binalyze` + `nocodb_binalyze` + `grafana_binalyze` on `app-net` (see `infra/docker-compose.yml`). Containers **remain running** for prototyping and insurance; not the demo/production architecture.
 
-**Rejected alternatives** (full reasoning in DECISIONS.md):
-- GCP Cloud Run + Vertex AI — exceeds 6h build budget; documented as v2
-- Microsoft Copilot Studio — wrong stack
-- Adopt-everything (shared Postgres) — insufficient data isolation
-- Cloudflare Tunnel for ingress — Traefik already provides; deferred to v2
+**ADR anchor:** **ADR-016** (pivot). Superseded Hostinger-target ADRs: 001, 002, 003, 004, 008 — bodies preserved in `DECISIONS.md`.
 
 ---
 
@@ -89,11 +96,11 @@ Audited 2026-05-01 on Hostinger VPS `srv1178070.hstgr.cloud` (72.61.207.148).
 
 - **Retention:** 90 days for queries, 7 years for refusals, indefinite under litigation hold
 - **GDPR lawful basis:** Article 6(1)(f) Legitimate Interest + Art. 17(3)(e) for legal proceedings
-- **RBAC v1:** hardcoded block-list in n8n credentials
+- **RBAC v1:** hardcoded block-list in Cloud Run config / Secret Manager (v0: n8n credentials on Hostinger)
 - **RBAC v2 design:** `employee` / `people_team` / `compliance_team` / `admin` mapped to Slack User Groups
 - **Litigation hold:** retroactive (legal_hold column) + forward (legal_hold_subjects table)
-- **Reviewer interface:** NocoDB for case work + Grafana for operations
-- **Forensic export:** v1 ships CSV via NocoDB; v2 wrapper (hash + manifest + signature) documented
+- **Reviewer / ops surfaces:** Looker Studio + BigQuery views; optional Cloud Run reviewer UI (replaces NocoDB + Grafana as primary)
+- **Forensic export:** CSV / BQ export + v2 wrapper (hash + manifest + signature) documented in `PRODUCTION_CHECKLIST.md`
 - **Single category v1:** People Operations only (multi-category metadata schema designed in)
 - **Knowledge base content:** all stub docs tagged `[ILLUSTRATIVE]`
 - **External validation path:** automated SMB stack (~£0-50/month) is the realistic answer; £10-20k external review documented for high-stakes deployments only
@@ -113,7 +120,7 @@ Audited 2026-05-01 on Hostinger VPS `srv1178070.hstgr.cloud` (72.61.207.148).
 
 **Still skipped by design (token economics / phase):**
 - GitHub MCP — replaced by `gh` CLI in terminal
-- Postgres MCP — to be added after Postgres for the bot deploys (Phase 3+), read-only mode when introduced
+- Postgres MCP — to be added after **Cloud SQL** for the bot is reachable (Phase 3b-G+), read-only mode when introduced
 
 **MCP sanity test:** ✅ Complete (2026-05-02), including config drift recovery and live Cursor checks for all four servers above.
 
@@ -143,7 +150,7 @@ KNOWLEDGE-BOT/
 │   └── AUTOMATED_VALIDATION.md  (realistic SMB validation stack)
 ├── .gitignore                   (extended with security patterns)
 ├── BUILD_LOG.md                 (this file)
-├── DECISIONS.md                 (14 ADRs, architectural record)
+├── DECISIONS.md                 (16 ADRs, architectural record — incl. ADR-016 GCP pivot)
 ├── LICENSE                      (MIT, untouched)
 └── README.md                    (forensic-grade demo positioning)
 ```
@@ -158,11 +165,14 @@ KNOWLEDGE-BOT/
 
 ```
 infra/postgres/
-├── init.sql                     (audit_log schema, triggers, retention — Phase 3b)
+├── init.sql                     (audit_log schema, triggers, retention — Phase 3b-G on Cloud SQL; v0 Hostinger optional)
 └── seed-data.sql                (legal_hold_subjects empty, etc.)
 
+cloud-run/ (or equivalent service layout)
+└── (Slack webhook + retrieval orchestration — Phase 3d-G)
+
 n8n-workflows/
-└── knowledge-bot.json           (workflow export)
+└── knowledge-bot.json           (optional v0 only; primary path is Cloud Run per ADR-016)
 
 knowledge-base/
 ├── people-ops/
@@ -172,13 +182,13 @@ knowledge-base/
 │   ├── pen-test-sop.md          ([ILLUSTRATIVE] stub)
 │   └── onboarding.md            ([ILLUSTRATIVE] stub)
 └── ingestion/
-    └── ingest.py                (chunk + embed + push to Qdrant)
+    └── ingest.py                (GCS upload + RAG Engine corpus wiring — Phase 3c-G)
 
 prompts/
-└── system.md                    (Claude system prompt with grounding rules)
+└── system.md                    (system prompt with grounding rules; model via Vertex)
 
 scripts/
-├── retention-deletion.sql       (nightly cleanup)
+├── retention-deletion.sql       (nightly cleanup — Cloud SQL / scheduler)
 └── reset-bot-state.sh           (recovery script)
 ```
 
@@ -191,25 +201,26 @@ scripts/
 | Audit | ✅ Complete | (was 25 min) |
 | Foundation (rules, decisions, docs) | ✅ Complete | (was ~3 hours) |
 | MCP sanity test | ✅ Complete (2026-05-02; incl. config drift + PATH fix) | 5 min |
-| Phase 3a: Docker compose for Postgres + Qdrant + NocoDB + Grafana | ✅ Complete | 45 min |
-| Phase 3b: Postgres init SQL with triggers + retention + hold tables | ⏳ Next | 45 min |
-| Phase 3c: Knowledge base content + ingestion script | ⏳ Phase 3 | 45 min |
-| Phase 3d: n8n workflow (Slack → block-list → retrieval → Claude → audit → response) | ⏳ Phase 3 | 75 min |
-| Phase 3e: Slack app config + signature verification | ⏳ Phase 3 | 30 min |
-| Phase 3f: Grafana dashboard + NocoDB review setup | ⏳ Phase 3 | 30 min |
-| Phase 4: End-to-end testing, edge cases, refusal demo | ⏳ Final | 45 min |
-| Phase 5: Rehearsal (run demo twice on screen-share) | ⏳ Final | 30 min |
+| Phase 3a: Hostinger Docker compose (Postgres + Qdrant + NocoDB + Grafana) | ✅ Complete (v0 prototyping; superseded by GCP path — ADR-016) | 45 min |
+| Phase 3a-G: GCP project setup (billing, APIs, org policy sanity) | ⏳ Next | ~60 min |
+| Phase 3b-G: Cloud SQL audit log schema with triggers | ⏳ Phase 3-G | ~45 min |
+| Phase 3c-G: Cloud Storage + Vertex AI RAG Engine corpus | ⏳ Phase 3-G | ~60 min |
+| Phase 3d-G: Cloud Run service — Slack webhook + RAG retrieval + generation | ⏳ Phase 3-G | ~90 min |
+| Phase 3e-G: Slack app config with Bolt SDK signature verification | ⏳ Phase 3-G | ~30 min |
+| Phase 3f-G: Looker Studio dashboard + reviewer interface | ⏳ Phase 3-G | ~60 min |
+| Phase 4: End-to-end testing + refusal demo | ⏳ Final | ~45 min |
+| Phase 5: Rehearsal (run demo twice on screen-share) | ⏳ Final | ~30 min |
 
-**Total Phase 3+ remaining:** ~5 hours of focused work (Phase 3a done).
+**Total Phase 3+ remaining (GCP path):** ~**6.5 hours** of focused work.
 
 ---
 
 ## Next 3-5 Concrete Steps
 
-1. **Phase 3b — Postgres init SQL** — `audit_log` (13 fields), append-only triggers, retention column, legal_hold / hold_audit tables; mount or chain after `init-databases.sql` on first init
-2. **Verify schema** — `psql` against `binalyze_audit`; run `.cursor/commands/check-audit.md` flow against empty schema where applicable
-3. **Phase 3c** — Knowledge base stubs + `ingest.py` (chunk, embed, Qdrant)
-4. **Phase 3d** — n8n workflow export (Slack → block-list → retrieval → Claude → audit → response)
+1. **Phase 3a-G — GCP project setup** — enable APIs (Run, Vertex AI, Cloud SQL, Storage, IAM, Logging), billing account, least-privilege starter IAM roles
+2. **Phase 3b-G — Cloud SQL** — create Postgres instance; apply `audit_log` init SQL (append-only triggers, hold tables); verify with `check-audit` flow
+3. **Phase 3c-G — RAG corpus** — GCS bucket for docs; Vertex AI RAG Engine corpus + ingestion pipeline
+4. **Phase 3d-G — Cloud Run** — Slack Bolt webhook, retrieval callout, generation, **every path writes `audit_log`**
 5. **Re-open MCP panel after host changes** — if global MCP config changes, confirm four servers still green (operational hygiene)
 
 ---
@@ -220,8 +231,8 @@ scripts/
 |----------|-------|-----------------|
 | Does n8n-mcp load in Cursor on remote-SSH? | Resolved 2026-05-02 | Requires `PATH` override in `mcp.json` for `npx`; documented in `00-base.mdc` and state recovery section above |
 | Will n8n version on VPS support n8n-mcp's create_workflow tool? | Optional verify | Not blocking; we build workflow in n8n UI directly anyway |
-| Anthropic API key — do we have one, where is it stored? | User to confirm | Bitwarden vault entry needed before Phase 3d |
-| Claude model choice for the bot — Sonnet 4 or Opus 4? | User decision | Sonnet 4 is the right default; Opus only if benchmarking shows need |
+| Vertex / Gemini vs Claude (Model Garden) — default model for demo? | User to confirm | ADR-016: Gemini 3 default; Claude optional via Vertex |
+| API keys / WIF — where stored for Cloud Run? | User to confirm | GCP Secret Manager + workload identity recommended before Phase 3d-G |
 
 ---
 
@@ -229,7 +240,7 @@ scripts/
 
 If resuming this project in a new conversation, paste this paragraph at the top:
 
-> "Resuming work on the Forensic-Grade Knowledge Bot for People Operations (interview demo for DFIR vendor, Wed 2026-05-06 15:30 UK). Architecture LOCKED — see DECISIONS.md. Stack: n8n on Hostinger VPS + Postgres (audit log, append-only triggers) + Qdrant (vectors) + NocoDB (reviewer UI) + Grafana (ops dashboard) + Slack + Claude API. Foundation + MCP verification + Phase 3a infra (four containers on app-net, Traefik TLS, both Postgres DBs) complete as of 2026-05-02. Next: Phase 3b — audit_log init SQL in `binalyze_audit`. Read BUILD_LOG.md and docs/SECURITY_INCIDENTS.md if touching Cursor MCP or credentials. Apply Bulletproof Prompt rules from prior session."
+> "Resuming work on the Forensic-Grade Knowledge Bot for People Operations (interview demo for DFIR vendor, Wed 2026-05-06 15:30 UK). Architecture LOCKED — see DECISIONS.md **ADR-016** (GCP pivot from 2026-05-02). Primary stack: **Cloud Run + Vertex AI RAG Engine + Cloud SQL (Postgres, append-only audit) + Cloud Storage + Slack (Bolt SDK) + Looker/BigQuery**; **Gemini 3 via Vertex** default, Claude via Model Garden optional. Hostinger **Phase 3a** containers remain as **v0 fallback** (`infra/`). Foundation + MCP verification complete. **Next: Phase 3a-G** (GCP project setup). Read BUILD_LOG.md and docs/SECURITY_INCIDENTS.md if touching MCP or credentials. Apply Bulletproof Prompt rules from prior session."
 
 Then point me at the repo + BUILD_LOG.md and we re-anchor in 2 minutes.
 
@@ -242,6 +253,6 @@ Update this file at phase boundaries (not every commit). Specifically:
 - After any architectural decision change
 - Before stopping for the day
 
-Each update should: refresh "Current Status," tick off completed phases, add to "Files Committed," update "Next 3-5 Concrete Steps."
+Each update should: refresh "Current Status," tick off completed phases, add to "Files Committed," update "Next 3-5 Concrete Steps" (GCP **3a-G … 3f-G** as applicable).
 
 This file IS a demo artifact. Megan or a reviewer skimming the repo can read this in 5 minutes and understand the build's progression. Keep it factual and current.

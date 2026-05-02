@@ -6,12 +6,24 @@ description: Run audit log integrity checks before demo
 
 Run this when validating the audit log is healthy before a demo or commit.
 
+**Target database:** **`binalyze_audit` on Cloud SQL** (primary path after Phase 3b-G).  
+v0 Hostinger: `postgres_binalyze` container only if you are explicitly validating the fallback stack.
+
 ## Steps
 
-1. Connect to the audit DB:
+1. Connect to the audit DB on **Cloud SQL** (after Phase 3b-G). Example patterns — replace placeholders:
+
+**Option A — Cloud SQL Auth Proxy + psql:**
 
 ```bash
-docker exec -it postgres_binalyze psql -U postgres -d binalyze_audit
+# Example: start proxy in another terminal, then:
+psql "host=127.0.0.1 port=<PROXY_PORT> dbname=binalyze_audit user=<DB_IAM_USER> sslmode=require"
+```
+
+**Option B — `gcloud sql connect`** (interactive password / IAM flow per your org):
+
+```bash
+gcloud sql connect <CLOUD_SQL_INSTANCE_NAME> --user=<DB_USER> --database=binalyze_audit
 ```
 
 2. Verify table exists with correct schema:

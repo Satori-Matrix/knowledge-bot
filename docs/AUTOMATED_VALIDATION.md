@@ -4,7 +4,7 @@ This document specifies the validation pipeline a security-vendor SMB would actu
 
 The distinction matters: external code review at £10-20k is appropriate for customer-facing systems, regulatory attestations, and compliance certification. For an internal Q&A bot at v1, the automated validation path below covers most of the same surface area at a fraction of the cost — and is what most SMBs actually run.
 
-This file documents the automated validation we would deploy for production. None of these tools are configured in v1; they are documented as the realistic next step before production rollout.
+This file documents the automated validation we would deploy for **GCP production**. None of these tools are fully configured in the demo repo; they are documented as the realistic next step before production rollout.
 
 ---
 
@@ -13,7 +13,7 @@ This file documents the automated validation we would deploy for production. Non
 For a 60-80 person security vendor's internal Q&A bot:
 
 - The blast radius is small (internal People-team users, no customer data)
-- The codebase is small (n8n workflow + SQL schema + a few scripts)
+- The codebase is small (Cloud Run services + SQL schema + a few scripts)
 - The threat model is bounded (see `docs/SECURITY.md` section 2)
 - The review cycle should be every PR, not annual
 
@@ -56,47 +56,49 @@ Runs all the above hooks consistently across team machines.
 
 ---
 
-## 3. The Validation Stack — On Pull Request (GitHub Actions)
+## 3. The Validation Stack — On Pull Request (CI)
 
-These run automatically when a PR is opened or updated.
+These run automatically when a PR is opened or updated. On GCP the **native** equivalents are **Cloud Build** triggers; GitHub Actions remains valid if the repo lives on GitHub — pick one CI spine, not duplicate pipelines without reason.
 
-### 3.1 GitHub CodeQL — Semantic Security Analysis
+### 3.1 Cloud Build — CI / CD
 
-GitHub's native semantic security scanner. Detects SQL injection patterns, command injection, path traversal, etc.
+Google-managed builds for container images and tests. Runs unit tests, builds images, pushes to **Artifact Registry**.
 
-- **Setup:** GitHub Actions workflow (`.github/workflows/codeql.yml`)
-- **Languages:** JavaScript (n8n Code nodes), Python (any helper scripts), SQL (with extensions)
-- **Cost:** Free for public repos; included in GitHub Advanced Security for private repos
+- **Setup:** `cloudbuild.yaml` in repo; trigger on push to `main` / PR (via GitHub App or Cloud Source Repositories)
+- **Cost:** Free tier then usage-based; fits SMB budgets at low volume
 
-### 3.2 Dependabot — Dependency Vulnerability Alerts
+### 3.2 Artifact Analysis — Container Image Scanning
 
-GitHub-native. Watches `package.json`, `requirements.txt`, etc. for vulnerable dependencies. Auto-creates PRs for security updates.
+**Artifact Analysis** (and related **Container Analysis** APIs) scans images in **Artifact Registry** for known CVEs and policy violations.
 
-- **Setup:** `.github/dependabot.yml`
-- **Cost:** Free, native GitHub feature
+- **Setup:** enable on the registry; optionally block deploy on Critical findings
+- **Cost:** Included in typical GCP billing models for scanning; verify current pricing
 
-### 3.3 CodeRabbit — AI-Powered PR Review
+### 3.3 Dependabot / Renovate — Dependency Vulnerability Alerts
 
-Reviews every PR with AI, comments inline on issues, generates PR summaries. Catches the class of issues that humans see but automation misses (subtle logic, naming, missing edge cases).
+If the repo is on **GitHub**: Dependabot watches manifests. On **GCP** only: consider **Renovate** or Cloud Build steps invoking `osv-scanner` / `npm audit` / `pip-audit`.
 
-- **Setup:** GitHub App, install on repo
-- **Configuration:** Optional `.coderabbit.yaml` for project rules
-- **Cost:** Free for OSS / personal; paid plans from approximately $24/dev/month for private repos
+- **Cost:** Free tiers available
 
-### 3.4 Gito (Optional Self-Hosted AI Review)
+### 3.4 CodeRabbit / Gito — AI-Powered PR Review (optional)
 
-Open-source alternative to CodeRabbit, using your own LLM API key. More control, slightly more setup.
+Same as before: GitHub App (CodeRabbit) or self-hosted Gito with your own LLM key — useful for any Git-hosted project.
 
-- **Repo:** github.com/Nayjest/Gito (open source)
-- **Setup:** GitHub Actions workflow + `LLM_API_KEY` in repo secrets
-- **Cost:** Free + your LLM API costs (Anthropic/OpenAI usage at standard rates)
+- **Cost:** Free tier or usage-based
 
-### 3.5 Trivy / Grype — Container Image Scanning
+### 3.5 Security Command Center (SCC) — Posture & Threats
 
-Scans Docker images we build (n8n customisations, Postgres init image, etc.) for known CVEs.
+For GCP organisations: **Security Command Center** (Premium or Standard tiers per org needs) surfaces misconfigurations, suspicious activity, and compliance violations across projects.
 
-- **Setup:** GitHub Actions step on Docker builds
-- **Cost:** Free, open source
+- **Setup:** enable at org/folder level; wire bot project as asset
+- **Cost:** Tier-dependent; often acceptable for security-vendor internal standards
+
+### 3.6 Cloud Logging + Log Router — Centralisation
+
+**Cloud Logging** with a **log sink to BigQuery** gives queryable, long-retention operational and security logs — including correlating **Cloud Audit Logs** with application logs.
+
+- **Setup:** sink filter + BigQuery dataset + IAM for analysts
+- **Cost:** Ingest + storage; demo-scale typically small
 
 ---
 
@@ -109,7 +111,7 @@ These run on a schedule, not per-PR.
 Tests the bot's prompt and refusal behaviour against a curated suite of inputs. Catches regressions when we change the system prompt or retrieval logic.
 
 - **Repo:** github.com/promptfoo/promptfoo (open source)
-- **Setup:** YAML test suite committed to repo, runs nightly via GitHub Actions
+- **Setup:** YAML test suite committed to repo, runs nightly via **Cloud Build** or GitHub Actions
 - **Tests we'd write:**
   - Prompt injection attempts (from OWASP LLM Top 10 examples)
   - Refusal robustness (queries with no relevant retrieval should return clear refusal)
@@ -154,10 +156,11 @@ If we deployed this stack tomorrow:
 | Task | Effort |
 |------|--------|
 | Install pre-commit framework + gitleaks + skill-scanner hooks | 30 min |
-| Configure CodeQL workflow | 15 min |
-| Enable Dependabot | 5 min |
-| Install CodeRabbit GitHub App | 10 min |
-| Configure Trivy/Grype on Docker builds | 20 min |
+| Configure Cloud Build trigger + `cloudbuild.yaml` | 30 min |
+| Enable Dependabot (or Renovate) | 5-15 min |
+| Install CodeRabbit GitHub App (optional) | 10 min |
+| Enable Artifact Analysis on Artifact Registry | 20 min |
+| Create log sink to BigQuery + IAM | 30 min |
 | Write initial Promptfoo test suite (20 baseline evals) | 2-3 hours |
 
 **Total: roughly 4-5 hours of one-time setup. Then it runs.**
@@ -170,7 +173,7 @@ If we deployed this stack tomorrow:
 
 - Accidentally committed secrets
 - Known CVEs in dependencies
-- Common code-level vulnerabilities (SQL injection, path traversal, etc. via CodeQL)
+- Common code-level vulnerabilities (SQL injection, path traversal, etc. via **Cloud Build** static analysis or optional GitHub CodeQL)
 - Prompt injection regressions in LLM behaviour
 - Cursor skill issues (via Cisco Skill Scanner)
 - Subtle code review issues (via AI PR reviewers)
@@ -191,7 +194,7 @@ For these: human review (internal or external) remains essential. Automation is 
 
 When asked about validation:
 
-> "v1 ships with the automated validation stack documented here — pre-commit hooks for secrets and skill scanning, CodeQL on PRs, AI-powered PR review via CodeRabbit, Promptfoo for LLM eval, all running automatically at near-zero cost. Total ~£0-50/month plus 4-5 hours of setup. Full external review documented in PRODUCTION_CHECKLIST.md is appropriate when this scales to customer-facing or regulated-data deployments. For an internal People-team bot, automated covers what matters."
+> "We ship with the automated validation path documented here — pre-commit hooks for secrets and skill scanning, **Cloud Build** (or GitHub Actions) for CI, **Artifact Analysis** on container images, **SCC** for posture, **Cloud Logging → BigQuery** sinks for correlation with **Cloud Audit Logs**, plus Promptfoo for LLM eval. Total roughly **£0-50/month** at SMB demo scale plus a few hours of setup. Full external review in PRODUCTION_CHECKLIST.md is for customer-facing or regulated-data deployments. For an internal People-team bot on GCP, automated covers what matters."
 
 This is the senior-engineering answer. Right-sized for the system, demonstrates current-tools knowledge, doesn't over-engineer.
 
@@ -202,11 +205,13 @@ This is the senior-engineering answer. Right-sized for the system, demonstrates 
 - gitleaks: github.com/gitleaks/gitleaks
 - Cisco Skill Scanner: github.com/cisco-ai-defense/skill-scanner
 - pre-commit: pre-commit.com
-- GitHub CodeQL: docs.github.com/code-security/code-scanning
+- Cloud Build: cloud.google.com/build/docs
+- Artifact Analysis / Container Analysis: cloud.google.com/artifact-analysis/docs
+- Security Command Center: cloud.google.com/security-command-center/docs
+- Cloud Logging / Log Router sinks: cloud.google.com/logging/docs/export
+- GitHub CodeQL (optional if using GitHub): docs.github.com/code-security/code-scanning
 - Dependabot: docs.github.com/code-security/dependabot
 - CodeRabbit: coderabbit.ai
 - Gito: github.com/Nayjest/Gito
-- Trivy: aquasecurity.github.io/trivy
-- Grype: github.com/anchore/grype
 - Promptfoo: promptfoo.dev
 - OWASP LLM Top 10: owasp.org/llm-top-10

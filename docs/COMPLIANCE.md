@@ -32,11 +32,11 @@ The data subject is the employee whose query is being processed.
 
 | Right | Article | Implementation |
 |-------|---------|----------------|
-| Access | Art. 15 | SQL/NocoDB query by `slack_user_id` returns all rows; deliver within 30 days |
+| Access | Art. 15 | BigQuery / Cloud SQL query by `slack_user_id` returns all rows; deliver within 30 days |
 | Rectification | Art. 16 | Audit log is append-only; corrections appended as new rows referencing the original |
 | Erasure | Art. 17 | Pseudonymisation in place: `slack_user_id` hashed irreversibly. Audit history preserved, PII unrecoverable |
 | Restriction | Art. 18 | `processing_restricted` flag added per-row when applicable; routine processing skips |
-| Portability | Art. 20 | CSV export filtered by `slack_user_id` provides structured machine-readable output |
+| Portability | Art. 20 | Export (CSV / Avro / Parquet) filtered by `slack_user_id` from BigQuery or Cloud SQL provides structured machine-readable output |
 | Objection | Art. 21 | Subject objects in writing; bot processing of their queries ceases on `slack_user_id` add to opt-out list |
 
 ### Right to Erasure — Detailed
@@ -72,7 +72,7 @@ The script logs its activity to `retention_audit` table: rows considered, rows d
 **Schema field `retention_until`** is computed at insert time:
 - Refusals: `created_at + INTERVAL '7 years'`
 - Successful queries: `created_at + INTERVAL '90 days'`
-- Updateable to extended dates by compliance team via NocoDB (audited change)
+- Updateable to extended dates by compliance team via controlled workflow (Looker / admin Cloud Run job) with audit trail
 
 ---
 
@@ -89,12 +89,12 @@ Authorised personnel (`compliance_team` or `admin` role) initiates a hold:
    - `set_by` (who authorised)
    - `set_at` (timestamp)
    - `released_at` (NULL until released)
-3. Mark all existing `audit_log` rows for that subject as `legal_hold = TRUE` via NocoDB or SQL
+3. Mark all existing `audit_log` rows for that subject as `legal_hold = TRUE` via analyst workflow or SQL (audited)
 4. The action is logged to `hold_audit` table
 
 ### Effects of Active Hold
 
-- Future queries from the held subject auto-tagged `legal_hold = TRUE` on insert (n8n workflow checks `legal_hold_subjects` before each audit write)
+- Future queries from the held subject auto-tagged `legal_hold = TRUE` on insert (Cloud Run handler checks `legal_hold_subjects` before each audit write)
 - Routine retention deletion skips rows where `legal_hold = TRUE`
 - Erasure requests for the subject denied under Art. 17(3)(e); subject is informed of the deferral
 - All `legal_hold_subjects` changes are themselves audited
@@ -107,7 +107,7 @@ Authorised personnel (`compliance_team` or `admin` role) initiates a hold:
 
 ### Export — v1 (manual, CSV)
 
-Reviewer filters NocoDB to `legal_hold = TRUE` for the subject + date range. One-click CSV export. The CSV is sent through whatever channel the legal team uses for evidence transfer.
+Reviewer filters **BigQuery** (or Looker on a BQ view) to `legal_hold = TRUE` for the subject + date range, then exports CSV. The CSV is sent through whatever channel the legal team uses for evidence transfer.
 
 **v1 limitations:** export is not cryptographically hashed, signed, or in an eDiscovery load format. Acceptable for internal hold management; insufficient for production-to-opposing-counsel.
 
@@ -142,20 +142,20 @@ A summary fit for the organisational ROPA register:
 - **Purpose:** Internal People-team self-service Q&A
 - **Categories of data subjects:** Employees of the deploying organisation
 - **Categories of personal data:** Slack `user_id`, query text, query timestamp, generated response (which may incidentally reference the subject), retrieval metadata
-- **Categories of recipients:** Internal People-team operators (via Grafana), compliance team (via NocoDB), Anthropic (LLM API processor), the deploying organisation's DPO and legal team on request
-- **Transfers outside EU/UK:** Anthropic's standard tier processes in US (verify current Anthropic data residency commitments). EU residency available on Anthropic enterprise tier — flagged in `PRODUCTION_CHECKLIST.md` as a v2 commercial option.
+- **Categories of recipients:** Internal People-team operators (via **Looker Studio**), compliance team (via **BigQuery / Looker** or reviewer UI), **Google Cloud** (Vertex AI processing), optional **Anthropic** if Claude is invoked via Vertex Model Garden, the deploying organisation's DPO and legal team on request
+- **Transfers outside EU/UK:** Vertex / Gemini and optional Anthropic routes — verify current **Google Cloud** and model vendor data residency and SCC / DPA terms. Configure **region** and **VPC-SC** per organisational policy.
 - **Retention:** 90 days for successful queries; 7 years for refusals; indefinite for litigation-held data
-- **Security measures:** TLS in transit; append-only triggers at the database; pseudonymisation on erasure; access controls (Slack signature verification, RBAC, NocoDB authentication)
+- **Security measures:** TLS in transit; append-only triggers on **Cloud SQL**; pseudonymisation on erasure; access controls (**Slack Bolt** signature verification, RBAC, **IAM** + **Cloud Audit Logs**)
 
 ---
 
 ## 7. Cross-Border Data Transfers
 
-**Default tier (v1):** Claude API requests transit to Anthropic's US infrastructure. The legal mechanism is Anthropic's published Standard Contractual Clauses + adequacy considerations.
+**Default (Vertex):** Generative requests run in **Google Cloud** regions selected by project policy; review Vertex AI and Model Garden terms for the chosen model (e.g. Gemini vs Claude).
 
-**v2 production option:** Anthropic enterprise tier with EU data residency, applicable when the deploying organisation requires EU-only processing.
+**Optional Anthropic route:** If Claude is used via **Vertex AI Model Garden**, data processing follows the Google + Anthropic agreements applicable to that integration.
 
-**TLS in transit:** all external API calls and Slack webhook traffic use TLS 1.2+ (Traefik enforces). Internal Docker network traffic does not use TLS (acceptable for trust-boundary-internal traffic; documented).
+**TLS in transit:** Slack → **Cloud Run** and browser → Google services use TLS 1.2+. **Private Google Access** / **VPC-SC** can constrain data paths for production.
 
 ---
 

@@ -4,7 +4,7 @@ This document captures the architectural decisions made for the Forensic-Grade K
 
 The format follows the Architectural Decision Record (ADR) convention: each decision is dated, has a status, the context that drove it, the alternatives weighed, the choice made, and the consequences accepted.
 
-This is a demo project deliverable. All decisions are demo-appropriate; production deployment requires the additional gates listed in `docs/PRODUCTION_CHECKLIST.md`.
+This is a demo project deliverable evolving toward **GCP production** (see **ADR-016**). All decisions are demo-appropriate; production deployment requires the additional gates listed in `docs/PRODUCTION_CHECKLIST.md`.
 
 ---
 
@@ -12,6 +12,7 @@ This is a demo project deliverable. All decisions are demo-appropriate; producti
 
 **Date:** 2026-05-01
 **Status:** Accepted (v1)
+**Status:** Superseded by ADR-016 (2026-05-02)
 
 ### Context
 
@@ -47,6 +48,7 @@ n8n self-hosted on Hostinger VPS, with Postgres for the audit log, Qdrant for ve
 
 **Date:** 2026-05-01
 **Status:** Accepted (v1)
+**Status:** Superseded by ADR-016 (2026-05-02)
 
 ### Context
 
@@ -79,6 +81,7 @@ Option B. Reuse n8n and Traefik (proven, TLS already configured, on the shared `
 
 **Date:** 2026-05-01
 **Status:** Accepted (v1)
+**Status:** Superseded by ADR-016 (2026-05-02)
 
 ### Context
 
@@ -102,6 +105,7 @@ Stay with single-instance n8n for v1. Queue Mode is documented as v2 upgrade pat
 
 **Date:** 2026-05-01
 **Status:** Accepted (v1)
+**Status:** Superseded by ADR-016 (2026-05-02)
 
 ### Context
 
@@ -212,6 +216,7 @@ The bot processes personal data of employees (Slack `user_id`, query text, times
 
 **Date:** 2026-05-01
 **Status:** Accepted (v1)
+**Status:** Superseded by ADR-016 (2026-05-02)
 
 ### Context
 
@@ -431,14 +436,82 @@ Least privilege: granting management credentials to an MCP reachable from Cursor
 
 ---
 
+## ADR-016: Architectural Pivot to Production-Grade GCP from Day One
+
+**Date:** 2026-05-02  
+**Status:** Accepted (supersedes ADR-001, ADR-002, ADR-003, ADR-004, ADR-008)
+
+### Context
+
+During Phase 3a–3c planning, it became clear that shipping a **v1 on Hostinger** (n8n + Postgres + Qdrant + NocoDB + Grafana) while documenting a **v2 migration to GCP** would create technical debt the moment v1 ships: two orchestration models, two retrieval stacks, two reviewer UIs, and a demo narrative that does not match the architecture a DFIR vendor would actually run at scale.
+
+For internal tooling at a security vendor, **the production architecture should be the demo architecture**. Deferring GCP to “later” optimises for the wrong risk.
+
+### The Rule That Emerged — Rule 13
+
+**Build for the system you'll have in two years, not just for the demo. Adopt for commodity, build for differentiation.** If a documented “v2 migration” in the original ADRs is the escape hatch for production scale, that is a signal the **v1 architecture was wrong** for the stated long-term intent.
+
+### Alternatives Reconsidered
+
+| Option | Description | Why rejected |
+|--------|-------------|--------------|
+| **N** | n8n + Qdrant on Hostinger; Vertex AI only for embeddings/LLM | Reinforces v1/v2 split; diagram-handling for technical documents is weaker than a native document+RAG pipeline; still leaves custom glue between worlds. |
+| **H** | n8n orchestrating Vertex AI RAG Engine via generic HTTP nodes | No first-class n8n integration for RAG Engine; becomes **custom integration glue** between two vendors — the worst of both worlds (Rule 13 violation). |
+| **G** | **Full GCP from day one** | **Chosen.** Native orchestration on Cloud Run, native RAG and layout-aware parsing on Vertex AI, Cloud SQL for our audit schema, first-class IAM and Cloud Audit Logs. |
+
+### Decision — New Architecture (GCP)
+
+- **Cloud Run** — Orchestration: Slack ingress, ingestion coordination, reviewer-facing surfaces where custom UI is required.
+- **Vertex AI RAG Engine** — Document ingestion, layout-aware parsing (including LLM Parser for diagrams), embedding, retrieval, reranking as **commodity** layers owned by the platform.
+- **Cloud SQL (Postgres)** — **Our** `audit_log` schema with append-only triggers (design from ADR-005 et seq.; ports directly from the Hostinger Postgres design).
+- **Cloud Storage** — Upload destination for source documents feeding the corpus.
+- **Slack** — Webhook to Cloud Run with **Slack Bolt SDK** signature verification (no hand-rolled HMAC).
+- **Looker Studio + BigQuery view** — Operations dashboard (replaces Grafana).
+- **Cloud Run reviewer UI and/or BigQuery-backed Looker** — Case-work and investigation views (replaces NocoDB spreadsheet UI).
+- **Gemini 3 via Vertex AI** for generation by default; **Claude (Anthropic)** remains an option through **Vertex AI Model Garden** where policy allows.
+
+### What Is Preserved from Hostinger / v0 Work
+
+- **Audit log schema design** — 13 fields, append-only enforcement, `retention_until`, `legal_hold` + `legal_hold_subjects` + `hold_audit` — unchanged in intent; implemented on **Cloud SQL**.
+- **GDPR posture, retention rules, litigation hold logic** — ADR-006, ADR-007, ADR-009 remain valid; implementation references move to GCP services.
+- **MCP recovery work, Rule 13, documentation discipline** — unchanged.
+- **Hostinger containers** (`infra/docker-compose.yml` et al.) — **remain running** as a **v0 prototyping / fallback** environment; not torn down. They are **not** the primary demo or production path after this ADR.
+
+### Trade-offs Accepted
+
+- Higher upfront learning curve for engineers new to GCP.
+- **Two-cloud reality during transition** — Hostinger v0 + GCP primary — accepted as **insurance**, not as the long-term architecture.
+- GCP cost at demo scale (~**$0–50/month**, often within **$300 free trial** credit) accepted against the cost of re-platforming after a misleading v1.
+
+### Trade-offs Rejected (from Option N and the old v1 path)
+
+- Custom n8n HTTP glue against Vertex AI RAG Engine REST APIs.
+- Accepting a **diagram-handling gap** for technical People Ops documents.
+- Shipping a v1 that **requires** a documented v2 migration to be “real.”
+
+### Consequences for Forensic-Grade Audit
+
+- **Cloud SQL** — Our schema, our triggers, our operational control (same forensic story as ADR-005).
+- **Cloud Audit Logs** — Google’s independent record of API and administrative actions.
+- **Combined** — Two independent witnesses (application audit row + platform audit event) where applicable; **stronger** than either layer alone for demonstrating due care.
+
+### Consequences for Delivery
+
+- Phase plan pivots to **3a-G … 3f-G** on GCP (see `BUILD_LOG.md`).
+- ADR-001, ADR-002, ADR-003, ADR-004, ADR-008 are **superseded** (status lines updated; full text retained below as forensic record).
+- ADR-005, ADR-006, ADR-007, ADR-009, ADR-010 remain **valid** (platform-agnostic policy and schema decisions).
+- ADR-011–ADR-014 remain **valid** (tooling and content discipline).
+
+---
+
 ## Decisions Not Yet Made (Open Questions)
 
 These are explicitly deferred to production planning:
 
-- **Anthropic data residency** — EU enterprise tier vs US standard. Affects GDPR transfer-mechanism analysis.
-- **Backup and disaster recovery** — Postgres point-in-time recovery, Qdrant snapshot frequency. Document in PRODUCTION_CHECKLIST.md.
-- **Monitoring beyond Grafana** — Sentry for application errors, structured log shipping. v2 scope.
-- **Scale beyond demo** — single-instance limits, concurrent query handling, retrieval cache. Driven by measured load, not pre-optimised.
+- **Anthropic vs Gemini data residency** — EU enterprise / Vertex regions vs default tiers. Affects GDPR transfer-mechanism analysis.
+- **Backup and disaster recovery** — Cloud SQL PITR, GCS object versioning, RAG corpus backup policy. Document in PRODUCTION_CHECKLIST.md.
+- **Monitoring beyond Looker Studio** — Error Reporting, log sinks, SCC findings. Scope grows with deployment.
+- **Scale beyond demo** — Cloud Run concurrency, Cloud SQL sizing, RAG query quotas. Driven by measured load, not pre-optimised.
 
 ---
 

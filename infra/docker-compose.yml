@@ -1,6 +1,11 @@
 # Binalyze Knowledge Bot — Phase 3a stack (Postgres + Qdrant + NocoDB + Grafana).
 # Joins external Traefik network `app-net` (same as n8n in /root/docker-compose.yml).
 # Do not run until reviewed; validate with: docker compose config
+#
+# v0 prototyping environment — superseded by GCP architecture
+# See ADR-016 in DECISIONS.md for the architectural pivot rationale.
+# These containers remain running on the Hostinger VPS as a fallback
+# environment but are not the demo path.
 
 services:
   postgres_binalyze:
