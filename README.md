@@ -28,7 +28,7 @@ A user invokes the bot from Slack. The service:
 
 **Forensic differentiation is ours:** audit schema, refusal semantics, hold management, and pseudonymisation policy. **Commodity ML/RAG is Google's:** parsing, embeddings, retrieval, and reranking at production quality — including stronger handling of technical layouts than a bolted-on self-hosted vector store.
 
-The demo is positioned as **the architecture Binalyze would actually extend at scale**, not a throwaway self-hosted prototype with a separate “v2 migration” fantasy.
+The demo is positioned as **the architecture a DFIR-platform vendor would actually extend at scale** (placeholder example org: **Acme DFIR**), not a throwaway self-hosted prototype with a separate “v2 migration” fantasy.
 
 See [`DECISIONS.md`](./DECISIONS.md) for **ADR-016** (GCP pivot), prior ADRs (superseded entries retained), and trade-offs.
 

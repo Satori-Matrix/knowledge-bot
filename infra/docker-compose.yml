@@ -1,4 +1,4 @@
-# Binalyze Knowledge Bot — Phase 3a stack (Postgres + Qdrant + NocoDB + Grafana).
+# Forensic-grade Knowledge Bot (demo) — Phase 3a stack (Postgres + Qdrant + NocoDB + Grafana).
 # Joins external Traefik network `app-net` (same as n8n in /root/docker-compose.yml).
 # Do not run until reviewed; validate with: docker compose config
 #

@@ -255,4 +255,4 @@ Update this file at phase boundaries (not every commit). Specifically:
 
 Each update should: refresh "Current Status," tick off completed phases, add to "Files Committed," update "Next 3-5 Concrete Steps" (GCP **3a-G … 3f-G** as applicable).
 
-This file IS a demo artifact. Megan or a reviewer skimming the repo can read this in 5 minutes and understand the build's progression. Keep it factual and current.
+This file IS a demo artifact. The interview's hiring manager or an independent reviewer skimming the repo can read this in 5 minutes and understand the build's progression. Keep it factual and current.

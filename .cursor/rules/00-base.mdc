@@ -1,12 +1,12 @@
 ---
-description: Core project guardrails for Binalyze Knowledge Bot
+description: Core project guardrails for forensic-grade Knowledge Bot demo (placeholder org — Acme DFIR)
 alwaysApply: true
 ---
 
-# Binalyze Knowledge Bot — Core Rules
+# Knowledge Bot — Core Rules (demo)
 
 ## Project Identity
-- This is an internal knowledge bot for Binalyze (DFIR vendor) People team
+- This is an internal knowledge bot **for the People team at a DFIR-platform vendor** (placeholder org in docs: **Acme DFIR**)
 - **Primary stack (post ADR-016):** GCP — **Cloud Run** + **Vertex AI RAG Engine** + **Cloud SQL (Postgres, audit log)** + **Cloud Storage** + **Slack** + **Looker Studio / BigQuery** for ops and reviewer views. **Gemini 3 via Vertex** default; Claude via **Model Garden** optional.
 - **v0 fallback:** Hostinger Docker stack under `infra/` (n8n-era prototyping) — **superseded as the demo path**; containers may remain running; see **ADR-016** in `DECISIONS.md`.
 - Architecture is LOCKED to **ADR-016** for the primary path. Do not propose reverting to Hostinger as the main deployment without an explicit ADR.
@@ -25,6 +25,7 @@ alwaysApply: true
 - Removing the [ILLUSTRATIVE] tag from stub knowledge base content
 - Adding scope creep features not in the locked architecture
 - **Custom HTTP glue** between two vendors’ products when neither offers a first-class integration (Rule 13)
+- Using a third-party company's name in public/immutable artifacts without explicit written permission (Rule 14)
 
 ## When unsure
 - Search the project's DECISIONS.md for prior decisions before proposing new ones
@@ -45,3 +46,11 @@ alwaysApply: true
 - **Build for the system you'll have in two years, not just the demo.** If the original ADRs described a **“v2 migration”** to be “real,” that was a sign the **v1 Hostinger stack was the wrong long-term anchor** — corrected by **ADR-016**.
 - **When using a vendor for part of a system, use the vendor's native integration** with your orchestration layer. Do not build **custom HTTP glue** between two vendors' products that lack a first-class integration (e.g. n8n generic nodes calling Vertex RAG Engine REST without native support).
 - **Adopt production-grade components for commodity parts:** parsing, embedding, retrieval, reranking → **Vertex AI RAG Engine**. **Keep custom only what is defensibly differentiated:** audit logs, refusal logic, hold management, and pseudonymisation policy.
+
+## Rule 14 — No third-party company names in immutable artifacts
+
+- Do not use a third party's company name (especially a prospective employer's) in immutable artifacts: project IDs, public repo names, public URLs, public documentation.
+- Use industry-standard placeholders (**"Acme DFIR"**, **"ExampleCorp"**) in artifacts that may be public.
+- Specific stack details (vendor names of tools used: Slack, HubSpot, GCP, etc.) are factual and acceptable to reference.
+- Storytelling about the target audience is verbal/conversational content for interviews, not artifact content.
+- This is both a trademark consideration and an asymmetric-power consideration: until employed, the candidate has no licence to use a prospective employer's name in artifacts.
