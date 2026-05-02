@@ -8,9 +8,9 @@ For architectural decisions, see `DECISIONS.md`. For compliance, see `docs/COMPL
 
 ## Current Status
 
-**Phase:** Foundation complete. MCP configuration recovered and verified 2026-05-02. **Phase 3a** (Docker compose for Postgres + Qdrant + NocoDB + Grafana) is next.
+**Phase:** Foundation + MCP verification complete 2026-05-02. **Phase 3a** (Docker compose for Postgres + Qdrant + NocoDB + Grafana on `app-net`, Traefik TLS) is **complete and verified on VPS**. **Phase 3b** (Postgres init SQL: `audit_log` schema, append-only triggers, retention / hold tables) is next.
 
-**Last update:** 2026-05-02 (state recovery + MCP verification)
+**Last update:** 2026-05-02 (Phase 3a infra committed; containers verified)
 
 **Demo target:** Wednesday 2026-05-06, 15:30 UK
 
@@ -129,6 +129,11 @@ KNOWLEDGE-BOT/
 │   │   └── 10-security.mdc      (sensitive paths — globs)
 │   └── commands/
 │       └── check-audit.md       (audit log integrity check)
+├── infra/
+│   ├── docker-compose.yml       (postgres_binalyze, qdrant_binalyze, nocodb_binalyze, grafana_binalyze + app-net + Traefik labels)
+│   ├── .env.example             (variable template; real `.env` is gitignored)
+│   └── postgres/
+│       └── init-databases.sql   (creates binalyze_audit on first Postgres init; NocoDB DB from POSTGRES_DB)
 ├── docs/
 │   ├── COMPLIANCE.md            (GDPR posture, retention, hold)
 │   ├── SECURITY.md              (threat model, OWASP LLM Top 10)
@@ -152,11 +157,9 @@ KNOWLEDGE-BOT/
 ## Files NOT Yet Created (Phase 3+)
 
 ```
-infra/
-├── docker-compose.yml           (Postgres + Qdrant + NocoDB + Grafana)
-└── postgres/
-    ├── init.sql                 (audit_log schema, triggers, retention)
-    └── seed-data.sql            (legal_hold_subjects empty, etc.)
+infra/postgres/
+├── init.sql                     (audit_log schema, triggers, retention — Phase 3b)
+└── seed-data.sql                (legal_hold_subjects empty, etc.)
 
 n8n-workflows/
 └── knowledge-bot.json           (workflow export)
@@ -188,8 +191,8 @@ scripts/
 | Audit | ✅ Complete | (was 25 min) |
 | Foundation (rules, decisions, docs) | ✅ Complete | (was ~3 hours) |
 | MCP sanity test | ✅ Complete (2026-05-02; incl. config drift + PATH fix) | 5 min |
-| Phase 3a: Docker compose for Postgres + Qdrant + NocoDB + Grafana | ⏳ Next | 45 min |
-| Phase 3b: Postgres init SQL with triggers + retention + hold tables | ⏳ Phase 3 | 45 min |
+| Phase 3a: Docker compose for Postgres + Qdrant + NocoDB + Grafana | ✅ Complete | 45 min |
+| Phase 3b: Postgres init SQL with triggers + retention + hold tables | ⏳ Next | 45 min |
 | Phase 3c: Knowledge base content + ingestion script | ⏳ Phase 3 | 45 min |
 | Phase 3d: n8n workflow (Slack → block-list → retrieval → Claude → audit → response) | ⏳ Phase 3 | 75 min |
 | Phase 3e: Slack app config + signature verification | ⏳ Phase 3 | 30 min |
@@ -197,16 +200,16 @@ scripts/
 | Phase 4: End-to-end testing, edge cases, refusal demo | ⏳ Final | 45 min |
 | Phase 5: Rehearsal (run demo twice on screen-share) | ⏳ Final | 30 min |
 
-**Total Phase 3+ remaining:** ~5.5 hours of focused work.
+**Total Phase 3+ remaining:** ~5 hours of focused work (Phase 3a done).
 
 ---
 
 ## Next 3-5 Concrete Steps
 
-1. **Write Phase 3a Docker compose** — Postgres + Qdrant + NocoDB + Grafana joining `app-net`
-2. **Stand up containers** — verify all four start cleanly, network reachability between them
-3. **Write Postgres init SQL** — 13-field audit_log schema, append-only triggers, retention column, legal_hold tables, hold_audit table
-4. **Verify schema** — run check-audit command against empty schema; confirm structure
+1. **Phase 3b — Postgres init SQL** — `audit_log` (13 fields), append-only triggers, retention column, legal_hold / hold_audit tables; mount or chain after `init-databases.sql` on first init
+2. **Verify schema** — `psql` against `binalyze_audit`; run `.cursor/commands/check-audit.md` flow against empty schema where applicable
+3. **Phase 3c** — Knowledge base stubs + `ingest.py` (chunk, embed, Qdrant)
+4. **Phase 3d** — n8n workflow export (Slack → block-list → retrieval → Claude → audit → response)
 5. **Re-open MCP panel after host changes** — if global MCP config changes, confirm four servers still green (operational hygiene)
 
 ---
@@ -226,7 +229,7 @@ scripts/
 
 If resuming this project in a new conversation, paste this paragraph at the top:
 
-> "Resuming work on the Forensic-Grade Knowledge Bot for People Operations (interview demo for DFIR vendor, Wed 2026-05-06 15:30 UK). Architecture LOCKED — see DECISIONS.md. Stack: n8n on Hostinger VPS + Postgres (audit log, append-only triggers) + Qdrant (vectors) + NocoDB (reviewer UI) + Grafana (ops dashboard) + Slack + Claude API. Foundation + MCP verification complete as of 2026-05-02 (four MCPs green: filesystem, sequential-thinking, context7 global; n8n-mcp project-scoped, documentation-only). Next: Phase 3a Docker compose. Read BUILD_LOG.md and docs/SECURITY_INCIDENTS.md if touching Cursor MCP or credentials. Apply Bulletproof Prompt rules from prior session."
+> "Resuming work on the Forensic-Grade Knowledge Bot for People Operations (interview demo for DFIR vendor, Wed 2026-05-06 15:30 UK). Architecture LOCKED — see DECISIONS.md. Stack: n8n on Hostinger VPS + Postgres (audit log, append-only triggers) + Qdrant (vectors) + NocoDB (reviewer UI) + Grafana (ops dashboard) + Slack + Claude API. Foundation + MCP verification + Phase 3a infra (four containers on app-net, Traefik TLS, both Postgres DBs) complete as of 2026-05-02. Next: Phase 3b — audit_log init SQL in `binalyze_audit`. Read BUILD_LOG.md and docs/SECURITY_INCIDENTS.md if touching Cursor MCP or credentials. Apply Bulletproof Prompt rules from prior session."
 
 Then point me at the repo + BUILD_LOG.md and we re-anchor in 2 minutes.
 

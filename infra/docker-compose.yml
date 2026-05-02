@@ -1,0 +1,116 @@
+# Binalyze Knowledge Bot — Phase 3a stack (Postgres + Qdrant + NocoDB + Grafana).
+# Joins external Traefik network `app-net` (same as n8n in /root/docker-compose.yml).
+# Do not run until reviewed; validate with: docker compose config
+
+services:
+  postgres_binalyze:
+    image: pgvector/pgvector:pg16
+    container_name: postgres_binalyze
+    restart: always
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    volumes:
+      - postgres_binalyze_data:/var/lib/postgresql/data
+      - ./postgres/init-databases.sql:/docker-entrypoint-initdb.d/01-init-databases.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U kb_admin -d binalyze_audit"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - app-net
+
+  qdrant_binalyze:
+    image: qdrant/qdrant:v1.12.4
+    container_name: qdrant_binalyze
+    restart: always
+    environment:
+      QDRANT__SERVICE__API_KEY: ${QDRANT__SERVICE__API_KEY}
+    volumes:
+      - qdrant_binalyze_data:/qdrant/storage
+    networks:
+      - app-net
+
+  nocodb_binalyze:
+    image: nocodb/nocodb:latest
+    container_name: nocodb_binalyze
+    restart: always
+    depends_on:
+      postgres_binalyze:
+        condition: service_healthy
+    expose:
+      - "8080"
+    environment:
+      NC_DB: ${NC_DB}
+      NC_AUTH_JWT_SECRET: ${NC_AUTH_JWT_SECRET}
+    volumes:
+      - nocodb_binalyze_data:/usr/app/data
+    networks:
+      - app-net
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.nocodb-binalyze.rule=Host(`${NOCO_HOST}`)
+      - traefik.http.routers.nocodb-binalyze.tls=true
+      - traefik.http.routers.nocodb-binalyze.entrypoints=web,websecure
+      - traefik.http.routers.nocodb-binalyze.tls.certresolver=mytlschallenge
+      - traefik.http.routers.nocodb-binalyze.service=nocodb-binalyze
+      - traefik.http.services.nocodb-binalyze.loadbalancer.server.port=8080
+      - traefik.http.middlewares.nocodb-binalyze.headers.SSLRedirect=true
+      - traefik.http.middlewares.nocodb-binalyze.headers.STSSeconds=315360000
+      - traefik.http.middlewares.nocodb-binalyze.headers.browserXSSFilter=true
+      - traefik.http.middlewares.nocodb-binalyze.headers.contentTypeNosniff=true
+      - traefik.http.middlewares.nocodb-binalyze.headers.forceSTSHeader=true
+      - traefik.http.middlewares.nocodb-binalyze.headers.SSLHost=${DOMAIN_NAME}
+      - traefik.http.middlewares.nocodb-binalyze.headers.STSIncludeSubdomains=true
+      - traefik.http.middlewares.nocodb-binalyze.headers.STSPreload=true
+      - traefik.http.routers.nocodb-binalyze.middlewares=nocodb-binalyze@docker
+
+  grafana_binalyze:
+    image: grafana/grafana:11.3.0
+    container_name: grafana_binalyze
+    restart: always
+    expose:
+      - "3000"
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GF_SECURITY_ADMIN_USER}
+      GF_SECURITY_ADMIN_PASSWORD: ${GF_SECURITY_ADMIN_PASSWORD}
+      GF_SERVER_ROOT_URL: https://${GRAFANA_HOST}
+      GF_SERVER_SERVE_FROM_SUB_PATH: "false"
+    volumes:
+      - grafana_binalyze_data:/var/lib/grafana
+    networks:
+      - app-net
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.grafana-binalyze.rule=Host(`${GRAFANA_HOST}`)
+      - traefik.http.routers.grafana-binalyze.tls=true
+      - traefik.http.routers.grafana-binalyze.entrypoints=web,websecure
+      - traefik.http.routers.grafana-binalyze.tls.certresolver=mytlschallenge
+      - traefik.http.routers.grafana-binalyze.service=grafana-binalyze
+      - traefik.http.services.grafana-binalyze.loadbalancer.server.port=3000
+      - traefik.http.middlewares.grafana-binalyze.headers.SSLRedirect=true
+      - traefik.http.middlewares.grafana-binalyze.headers.STSSeconds=315360000
+      - traefik.http.middlewares.grafana-binalyze.headers.browserXSSFilter=true
+      - traefik.http.middlewares.grafana-binalyze.headers.contentTypeNosniff=true
+      - traefik.http.middlewares.grafana-binalyze.headers.forceSTSHeader=true
+      - traefik.http.middlewares.grafana-binalyze.headers.SSLHost=${DOMAIN_NAME}
+      - traefik.http.middlewares.grafana-binalyze.headers.STSIncludeSubdomains=true
+      - traefik.http.middlewares.grafana-binalyze.headers.STSPreload=true
+      - traefik.http.routers.grafana-binalyze.middlewares=grafana-binalyze@docker
+
+volumes:
+  postgres_binalyze_data:
+    name: postgres_binalyze_data
+  qdrant_binalyze_data:
+    name: qdrant_binalyze_data
+  nocodb_binalyze_data:
+    name: nocodb_binalyze_data
+  grafana_binalyze_data:
+    name: grafana_binalyze_data
+
+networks:
+  app-net:
+    external: true
